@@ -1,0 +1,15 @@
+streamlit
+python-dotenv
+langchain
+langchain-core
+langchain-openai
+langchain-pinecone
+langchain-community
+pinecone-client
+pinecone-plugin-interface
+sentence-transformers
+PyPDF2
+pypdf
+torch
+tqdm
+requests
