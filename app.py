@@ -2,9 +2,9 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
-from langchain.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_mistralai import ChatMistralAI
@@ -211,3 +211,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    #s
