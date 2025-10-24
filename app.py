@@ -2,13 +2,6 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 from pathlib import Path
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_mistralai import ChatMistralAI
-from langchain_core.documents import Document
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import tempfile
@@ -23,6 +16,28 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 if not MISTRAL_API_KEY:
     st.error("Please set MISTRAL_API_KEY in your environment variables.")
     st.stop()
+
+# FLEXIBLE IMPORTS - Try multiple import paths for LangChain 1.0+ compatibility
+try:
+    # Try primary import path
+    from langchain_community.document_loaders import PyPDFLoader
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_mistralai import ChatMistralAI
+    from langchain_core.documents import Document
+    st.success("✅ All imports loaded successfully!")
+except ImportError as e:
+    st.error(f"Import error: {e}")
+    # Fallback imports
+    try:
+        # Alternative import paths
+        from langchain.chains.combine_documents.stuff import create_stuff_documents_chain
+        st.success("✅ Used alternative import path for create_stuff_documents_chain")
+    except ImportError:
+        st.error("❌ Critical import failure. Please check LangChain version compatibility.")
+        st.stop()
 
 st.set_page_config(page_title="Medical Encyclopedia Chatbot", layout="wide")
 st.title("🧬 Medical Encyclopedia Chatbot")
@@ -211,5 +226,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    #s
