@@ -1,23 +1,22 @@
 import os
 import streamlit as st
 from dotenv import load_dotenv
-from pathlib import Path
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 import tempfile
 import requests
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Load environment variables
 load_dotenv()
 
-# Get API key from environment variables (Render will set this)
+# Get API key from environment variables
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 if not MISTRAL_API_KEY:
     st.error("Please set MISTRAL_API_KEY in your environment variables.")
     st.stop()
 
-# FLEXIBLE IMPORTS - Updated for LangChain compatibility
+# Flexible imports with error handling
 try:
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -25,24 +24,6 @@ try:
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_mistralai import ChatMistralAI
     from langchain_core.documents import Document
-    
-    # Try multiple import paths for create_stuff_documents_chain
-    try:
-        from langchain.chains.combine_documents import create_stuff_documents_chain
-    except ImportError:
-        try:
-            from langchain.chains.combine_documents.stuff import create_stuff_documents_chain
-        except ImportError:
-            # Fallback: Implement our own version
-            def create_stuff_documents_chain(llm, prompt):
-                def chain_func(input_dict):
-                    context = "\n\n".join([doc.page_content for doc in input_dict.get("context", [])])
-                    return llm.invoke(prompt.format_messages(
-                        input=input_dict["input"],
-                        context=context
-                    ))
-                return chain_func
-    
     st.success("✅ All imports loaded successfully!")
 except ImportError as e:
     st.error(f"Import error: {e}")
@@ -86,8 +67,8 @@ def embed_documents(docs, _embeddings):
     if not docs:
         return [], np.array([])
     texts = [doc.page_content for doc in docs]
-    vectors = [_embeddings.embed_query(text) for text in texts]
-    return texts, np.array(vectors)
+    vectors = np.array([_embeddings.embed_query(text) for text in texts])
+    return texts, vectors
 
 @st.cache_resource(show_spinner=True)
 def load_llm():
@@ -101,24 +82,34 @@ def simple_retrieve(query, texts, vectors, embeddings, top_k=3):
     top_indices = sims.argsort()[-top_k:][::-1]
     return [texts[i] for i in top_indices]
 
-def create_qa_chain(llm):
-    system_prompt = (
-        "You are a medical assistant for question-answering tasks. "
-        "Use the following retrieved context from medical literature to answer accurately and concisely. "
-        "If the context doesn't contain relevant information, say you don't know. "
-        "Keep answers to max 3 sentences and use simple language.\n\n{context}"
-    )
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{input}")
-    ])
-    return create_stuff_documents_chain(llm, prompt)
+def create_simple_qa_chain(llm):
+    """Create a simple QA chain without complex LangChain dependencies"""
+    def answer_question(question, context_docs):
+        context = "\n\n".join([doc.page_content for doc in context_docs])
+        
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a medical assistant for question-answering tasks. 
+            Use the following retrieved context from medical literature to answer accurately and concisely. 
+            If the context doesn't contain relevant information, say you don't know. 
+            Keep answers to max 3 sentences and use simple language.
+            
+            Context: {context}"""),
+            ("human", "{input}")
+        ])
+        
+        chain = prompt | llm
+        response = chain.invoke({
+            "input": question,
+            "context": context
+        })
+        return response
+    return answer_question
 
 def main():
     # Initialize components
     embeddings = load_embeddings()
     llm = load_llm()
-    qa_chain = create_qa_chain(llm)
+    qa_chain = create_simple_qa_chain(llm)
     
     # Sidebar configuration
     st.sidebar.header("📚 Document Configuration")
@@ -160,7 +151,7 @@ def main():
                 except:
                     pass
 
-        # Option 3: PDF from URL
+        # Option 3: PDF from URL (optional)
         st.sidebar.info("Or load PDF from URL")
         pdf_url = st.sidebar.text_input("PDF URL:")
         if pdf_url:
@@ -197,35 +188,11 @@ def main():
                 if retrieved_texts:
                     # Convert to documents and generate answer
                     retrieved_docs = [Document(page_content=text) for text in retrieved_texts]
-                    
-                    # Handle different chain invocation methods
-                    try:
-                        response = qa_chain.invoke({
-                            "input": query,
-                            "context": retrieved_docs
-                        })
-                    except Exception as chain_error:
-                        # Fallback: Direct LLM call
-                        st.warning("Using fallback method...")
-                        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
-                        messages = [
-                            ("system", f"Use this context: {context}"),
-                            ("human", query)
-                        ]
-                        response = llm.invoke(messages)
+                    response = qa_chain(query, retrieved_docs)
                     
                     # Display results
                     st.markdown(f"### **❓ Question:** {query}")
-                    
-                    # Handle different response formats
-                    if hasattr(response, 'content'):
-                        answer = response.content
-                    elif hasattr(response, 'text'):
-                        answer = response.text
-                    else:
-                        answer = str(response)
-                        
-                    st.markdown(f"### **💡 Answer:** {answer}")
+                    st.markdown(f"### **💡 Answer:** {response.content}")
                     
                     # Show source context (optional)
                     with st.expander("📖 View source context"):
