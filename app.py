@@ -17,27 +17,36 @@ if not MISTRAL_API_KEY:
     st.error("Please set MISTRAL_API_KEY in your environment variables.")
     st.stop()
 
-# FLEXIBLE IMPORTS - Try multiple import paths for LangChain 1.0+ compatibility
+# FLEXIBLE IMPORTS - Updated for LangChain compatibility
 try:
-    # Try primary import path
     from langchain_community.document_loaders import PyPDFLoader
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     from langchain_community.embeddings import HuggingFaceEmbeddings
-    from langchain.chains.combine_documents import create_stuff_documents_chain
     from langchain_core.prompts import ChatPromptTemplate
     from langchain_mistralai import ChatMistralAI
     from langchain_core.documents import Document
+    
+    # Try multiple import paths for create_stuff_documents_chain
+    try:
+        from langchain.chains.combine_documents import create_stuff_documents_chain
+    except ImportError:
+        try:
+            from langchain.chains.combine_documents.stuff import create_stuff_documents_chain
+        except ImportError:
+            # Fallback: Implement our own version
+            def create_stuff_documents_chain(llm, prompt):
+                def chain_func(input_dict):
+                    context = "\n\n".join([doc.page_content for doc in input_dict.get("context", [])])
+                    return llm.invoke(prompt.format_messages(
+                        input=input_dict["input"],
+                        context=context
+                    ))
+                return chain_func
+    
     st.success("✅ All imports loaded successfully!")
 except ImportError as e:
     st.error(f"Import error: {e}")
-    # Fallback imports
-    try:
-        # Alternative import paths
-        from langchain.chains.combine_documents.stuff import create_stuff_documents_chain
-        st.success("✅ Used alternative import path for create_stuff_documents_chain")
-    except ImportError:
-        st.error("❌ Critical import failure. Please check LangChain version compatibility.")
-        st.stop()
+    st.stop()
 
 st.set_page_config(page_title="Medical Encyclopedia Chatbot", layout="wide")
 st.title("🧬 Medical Encyclopedia Chatbot")
@@ -188,14 +197,35 @@ def main():
                 if retrieved_texts:
                     # Convert to documents and generate answer
                     retrieved_docs = [Document(page_content=text) for text in retrieved_texts]
-                    response = qa_chain.invoke({
-                        "input": query,
-                        "context": retrieved_docs
-                    })
+                    
+                    # Handle different chain invocation methods
+                    try:
+                        response = qa_chain.invoke({
+                            "input": query,
+                            "context": retrieved_docs
+                        })
+                    except Exception as chain_error:
+                        # Fallback: Direct LLM call
+                        st.warning("Using fallback method...")
+                        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+                        messages = [
+                            ("system", f"Use this context: {context}"),
+                            ("human", query)
+                        ]
+                        response = llm.invoke(messages)
                     
                     # Display results
                     st.markdown(f"### **❓ Question:** {query}")
-                    st.markdown(f"### **💡 Answer:** {response}")
+                    
+                    # Handle different response formats
+                    if hasattr(response, 'content'):
+                        answer = response.content
+                    elif hasattr(response, 'text'):
+                        answer = response.text
+                    else:
+                        answer = str(response)
+                        
+                    st.markdown(f"### **💡 Answer:** {answer}")
                     
                     # Show source context (optional)
                     with st.expander("📖 View source context"):
